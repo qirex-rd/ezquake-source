@@ -1270,8 +1270,8 @@ void FS_PakRem_f(void) { FS_PakOper_Process(PAKOP_REM); }
 
 #ifdef WITH_ZLIB
 
-int FS_GZipPack (char *source_path,
-				  char *destination_path,
+int FS_GZipPack (const char *source_path,
+				  const char *destination_path,
 				  qbool overwrite)
 {
 	FILE *source			= NULL;
@@ -1325,8 +1325,8 @@ int FS_GZipPack (char *source_path,
 //
 // Unpack a .gz file.
 //
-int FS_GZipUnpack (char *source_path,		// The path to the compressed source file.
-					char *destination_path, // The destination file path.
+int FS_GZipUnpack (const char *source_path,		// The path to the compressed source file.
+					const char *destination_path, // The destination file path.
 					qbool overwrite)		// Overwrite the destination file if it exists?
 {
 	FILE *dest		= NULL;
@@ -1370,45 +1370,24 @@ int FS_GZipUnpack (char *source_path,		// The path to the compressed source file
 	return 1;
 }
 
-//
-// Unpack a .gz file to a temp file.
-//
-int FS_GZipUnpackToTemp (char *source_path,		// The compressed source file.
-						  char *unpack_path,		// A buffer that will contain the path to the unpacked file.
-						  int unpack_path_size,		// The size of the buffer.
-						  char *append_extension)	// The extension if any that should be appended to the filename.
-{
-	int retval;
-	// Get a unique temp filename.
-	if (!COM_GetUniqueTempFilename (NULL, unpack_path, unpack_path_size, true))
-	{
+
+int FS_GZipUnpackToTemp(
+	const char *source_path,      // path to compressed source file
+	char *unpack_path,            // buffer for path to unpacked file
+	int unpack_path_size,         // size of said buffer
+	const char *append_extension  // filename extension of unpacked file
+) {
+	if (!COM_CreateTempFile(NULL, append_extension, unpack_path, unpack_path_size)) {
 		return 0;
 	}
-
-	// Delete the existing temp file (it is created when the filename is received above).
-	retval = unlink (unpack_path);
-	if (retval == -1 && qerrno != ENOENT)
-	{
-		unpack_path[0] = 0;
+	if (!FS_GZipUnpack(source_path, unpack_path, true)) {
+		unlink(unpack_path);
+		unpack_path[0] = '0';
 		return 0;
 	}
-
-	// Append the extension if any.
-	if (append_extension != NULL) {
-		char tmp_path[MAX_OSPATH];
-		snprintf(&tmp_path[0], sizeof(tmp_path), "%s%s", unpack_path, append_extension);
-		strlcpy (unpack_path, tmp_path, unpack_path_size);
-	}
-
-	// Unpack the file.
-	if (!FS_GZipUnpack (source_path, unpack_path, true))
-	{
-		unpack_path[0] = 0;
-		return 0;
-	}
-
 	return 1;
 }
+
 
 //
 // Inflates source file into the dest file. (Stolen from a zlib example :D) ... NOT the same as gzip!
@@ -1493,8 +1472,8 @@ int FS_ZlibInflate(FILE *source, FILE *dest)
 //
 // Unpack a zlib file. ... NOT the same as gzip!
 //
-int FS_ZlibUnpack (char *source_path,		// The path to the compressed source file.
-					char *destination_path, // The destination file path.
+int FS_ZlibUnpack (const char *source_path,		// The path to the compressed source file.
+					const char *destination_path, // The destination file path.
 					qbool overwrite)		// Overwrite the destination file if it exists?
 {
 	FILE *source	= NULL;
@@ -1536,46 +1515,24 @@ int FS_ZlibUnpack (char *source_path,		// The path to the compressed source file
 	return (retval != Z_OK) ? 0 : 1;
 }
 
-//
-// Unpack a zlib file to a temp file... NOT the same as gzip!
-//
-int FS_ZlibUnpackToTemp (char *source_path,		// The compressed source file.
-						  char *unpack_path,		// A buffer that will contain the path to the unpacked file.
-						  int unpack_path_size,		// The size of the buffer.
-						  char *append_extension)	// The extension if any that should be appended to the filename.
-{
-	int retval;
-	// Get a unique temp filename.
-	if (!COM_GetUniqueTempFilename (NULL, unpack_path, unpack_path_size, true))
-	{
+
+int FS_ZlibUnpackToTemp (
+	const char *source_path,      // path to compressed source file
+	char *unpack_path,            // buffer for path to unpacked file
+	int unpack_path_size,         // size of said buffer
+	const char *append_extension  // filename extension of unpacked file
+) {
+	if (!COM_CreateTempFile(NULL, append_extension, unpack_path, unpack_path_size)) {
 		return 0;
 	}
-
-	// Delete the existing temp file (it is created when the filename is received above).
-	retval = unlink (unpack_path);
-	if (retval == -1 && qerrno != ENOENT)
-	{
-		unpack_path[0] = 0;
+	if (!FS_ZlibUnpack (source_path, unpack_path, true)) {
+		unlink(unpack_path);
+		unpack_path[0] = '0';
 		return 0;
 	}
-
-	// Append the extension if any.
-	if (append_extension != NULL)
-	{
-		char tmp_path[MAX_OSPATH];
-		snprintf(&tmp_path[0], sizeof(tmp_path), "%s%s", unpack_path, append_extension);
-		strlcpy (unpack_path, tmp_path, unpack_path_size);
-	}
-
-	// Unpack the file.
-	if (!FS_ZlibUnpack (source_path, unpack_path, true))
-	{
-		unpack_path[0] = 0;
-		return 0;
-	}
-
 	return 1;
 }
+
 
 #endif // WITH_ZLIB
 
@@ -1583,59 +1540,58 @@ int FS_ZlibUnpackToTemp (char *source_path,		// The compressed source file.
 
 #define ZIP_WRITEBUFFERSIZE (8192)
 
-/*
-[19:23:40] <@disconnect|bla> Cokeman: how do you delete temporary files on windows? =:-)
-[19:23:51] <@Cokeman> I don't :D
-[19:23:52] Cokeman hides
-[19:23:55] <@disconnect|bla> zomfg :E
-[19:24:04] <@disconnect|bla> OK. Linux have same behavior now.
-*/
-int FS_ZipUnpackOneFileToTemp (unzFile zip_file,
-						  const char *filename_inzip,
-						  qbool case_sensitive,
-						  qbool keep_path,
-						  const char *password,
-						  char *unpack_path,			// The path where the file was unpacked.
-						  int unpack_path_size)			// The size of the buffer for "unpack_path", MAX_PATH is a goode idea.
-{
-	int retval;
 
+int FS_ZipUnpackOneFileToTemp (
+	unzFile zip_file,            // path to zip file
+	const char *filename_inzip,  // path to file inside zip file
+	qbool case_sensitive,        // whether to be case sensitive
+	qbool keep_path,             // whether to keep the file paths
+	const char *password,        // password for zip file
+	char *unpack_path,           // buffer for path to unpacked directory
+	int unpack_path_size         // size of said buffer
+) {
+#ifdef WIN32
+	char *sep = "\\";
+#else
+	char *sep = "/";
+#endif
+	int retval = UNZ_ERRNO;
 
-	// Get a unique temp filename.
-	if (!COM_GetUniqueTempFilename (NULL, unpack_path, unpack_path_size, true)) {
-		return UNZ_ERRNO;
+	if (!COM_CreateTempDir(NULL, unpack_path, unpack_path_size)) {
+		goto error;
 	}
-
-	// Delete the temp file if it exists (it is created when the filename is received above).
-	retval = unlink (unpack_path);
-	if (retval == -1 && qerrno != ENOENT) {
-		return UNZ_ERRNO;
-	}
-
-	// Make sure we create a directory for the destination path.
-	#ifdef WIN32
-	strlcat (unpack_path, "\\", unpack_path_size);
-	#else
-	strlcat (unpack_path, "/", unpack_path_size);
-	#endif
-
-	// Unpack the file
 	retval = FS_ZipUnpackOneFile (zip_file, filename_inzip, unpack_path, case_sensitive, keep_path, true, password);
+	if (retval != UNZ_OK) {
+		goto error;
+	}
 
-	if (retval == UNZ_OK) {
-		char tmp_path[MAX_OSPATH];
-		if (keep_path) {
-			snprintf(&tmp_path[0], sizeof(tmp_path), "%s%s", unpack_path, filename_inzip);
-		} else {
-			snprintf(&tmp_path[0], sizeof(tmp_path), "%s%s", unpack_path, COM_SkipPath(filename_inzip));
+	if (*unpack_path && unpack_path[strlen(unpack_path) - 1] != *sep) {
+		if (strlcpy(unpack_path, sep, unpack_path_size) >= unpack_path_size) {
+			retval = UNZ_ERRNO;
+			goto error;
 		}
-		strlcpy (unpack_path, tmp_path, unpack_path_size);
-	} else {
-		unpack_path[0] = 0;
+	}
+	if (keep_path) {
+		if (strlcpy(unpack_path, filename_inzip, unpack_path_size) >= unpack_path_size) {
+			retval = UNZ_ERRNO;
+			goto error;
+		}
+	}
+	else {
+		if (strlcpy(unpack_path, COM_SkipPath(filename_inzip), unpack_path_size) >= unpack_path_size) {
+			retval = UNZ_ERRNO;
+			goto error;
+		}
 	}
 
 	return retval;
+
+error:
+	unlink(unpack_path);
+	unpack_path[0] = '0';
+	return retval;
 }
+
 
 int FS_ZipBreakupArchivePath (char *archive_extension,			// The extension of the archive type we're looking fore "zip" for example.
 							   char *path,						// The path that should be broken up into parts.
@@ -1676,7 +1632,7 @@ int FS_ZipBreakupArchivePath (char *archive_extension,			// The extension of the
 //
 // Does the given path point to a zip file?
 //
-qbool FS_IsArchive (char *zip_path)
+qbool FS_IsArchive (const char *zip_path)
 {
 	return (!strcmp (COM_FileExtension (zip_path), "zip"));
 }
@@ -1684,11 +1640,11 @@ qbool FS_IsArchive (char *zip_path)
 // VFS-FIXME: exts should be placed somewhere obvious so it can be updated
 // if any other extensions are added
 // VFS-FIXME: this doesn't allow for the different ifdefs to be used
-qbool FS_IsArchive(char *arch_path)
+qbool FS_IsArchive(const char *arch_path)
 {
-	char *ext = COM_FileExtension(arch_path);
-	char *exts[] = {"zip", "pk3", "pak", "tar", "gz", NULL};
-	char **e;
+	const char *ext = COM_FileExtension(arch_path);
+	const char *exts[] = {"zip", "pk3", "pak", "tar", "gz", NULL};
+	const char **e;
 
 	for (e = exts; *e; e++) {
 		if (strcmp(ext, *e) == 0) {
@@ -1741,7 +1697,7 @@ static void FS_ZipMakeDirent (sys_dirent *ent, char *filename_inzip, unz_file_in
 }
 
 int FS_ZipUnpack (unzFile zip_file,
-				   char *destination_path,
+				   const char *destination_path,
 				   qbool case_sensitive,
 				   qbool keep_path,
 				   qbool overwrite,
@@ -1782,44 +1738,29 @@ int FS_ZipUnpack (unzFile zip_file,
 	return error;
 }
 
-int FS_ZipUnpackToTemp (unzFile zip_file,
-				   qbool case_sensitive,
-				   qbool keep_path,
-				   const char *password,
-				   char *unpack_path,			// The path where the file was unpacked.
-				   int unpack_path_size)		// The size of the buffer for "unpack_path", MAX_PATH is a goode idea.)
-{
-	int	retval = UNZ_OK;
 
-	// Get a unique temp filename.
-	if (!COM_GetUniqueTempFilename (NULL, unpack_path, unpack_path_size, true))
-	{
+int FS_ZipUnpackToTemp (
+	unzFile zip_file,      // path to zip file
+	qbool case_sensitive,  // whether to be case sensitive
+	qbool keep_path,       // whether to keep the file paths
+	const char *password,  // password for zip file
+	char *unpack_path,     // buffer for path to unpacked directory
+	int unpack_path_size   // size of said buffer
+) {
+	int retval = UNZ_OK;
+
+	if (!COM_CreateTempDir(NULL, unpack_path, unpack_path_size)) {
 		return UNZ_ERRNO;
 	}
-
-	// Delete the existing temp file (it is created when the filename is received above).
-	if (unlink (unpack_path))
-	{
-		return UNZ_ERRNO;
-	}
-
-	// Make sure we create a directory for the destination path since we're unpacking an entire zip.
-	#ifdef WIN32
-	strlcat (unpack_path, "\\", unpack_path_size);
-	#else
-	strlcat (unpack_path, "/", unpack_path_size);
-	#endif
-
-	// Unpack the file.
-	retval = FS_ZipUnpack (zip_file, unpack_path, case_sensitive, keep_path, true, password);
-
-	if (retval != UNZ_OK)
-	{
-		unpack_path[0] = 0;
+	retval = FS_ZipUnpack(zip_file, unpack_path, case_sensitive, keep_path, true, password);
+	if (retval != UNZ_OK) {
+		unlink(unpack_path);
+		unpack_path[0] = '0';
 	}
 
 	return retval;
 }
+
 
 int FS_ZipUnpackOneFile (unzFile zip_file,				// The zip file opened with FS_ZipUnpackOpenFile(..)
 						  const char *filename_inzip,	// The name of the file to unpack inside the zip.

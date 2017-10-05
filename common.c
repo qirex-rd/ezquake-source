@@ -104,10 +104,10 @@ const char *COM_SkipPath (const char *pathname)
 
 //============================================================================
 
-char *COM_SkipPathWritable (char *pathname)
+char *COM_SkipPathWritable (const char *pathname)
 {
-	char *last;
-	char *p;
+	const char *last;
+	const char *p;
 
 	last = p = pathname;
 
@@ -119,7 +119,7 @@ char *COM_SkipPathWritable (char *pathname)
 		p++;
 	}
 
-	return last;
+	return (char *)last;
 }
 
 //
@@ -330,58 +330,167 @@ int COM_GetTempDir(char *buf, int bufsize)
 	return returnval;
 }
 
-//
-// Get a unique temp filename.
-//
-int COM_GetUniqueTempFilename (char *path, char *filename, int filename_size, qbool verify_exists)
-{
-	int retval = 0;
-	#ifdef WIN32
-	char tmp[MAX_PATH];
-	char *p = NULL;
-	char real_path[MAX_PATH];
 
-	// If no path is specified we need to find it ourself.
-	// (This is done automatically in unix)
-	if (path == NULL)
-	{
-		if (!COM_GetTempDir(real_path, MAX_PATH))
-		{
+int  // length of the directory name or <0 on error
+COM_CreateTempDir(
+	const char *path,  // parent directory of the new directory
+	char *dirname,     // buffer for the name of the new directory
+	int dirname_size   // size of said buffer
+) {
+	char parent[MAX_PATH] = "";
+
+	if (path == NULL) {
+		if (COM_GetTempDir(parent, MAX_PATH) < 0) {
 			return -1;
 		}
-
-		p = real_path;
 	}
-	else
-	{
-		p = path;
+	else {
+		if (strlcpy(parent, path, MAX_PATH) >= MAX_PATH ) {
+			return -1;
+		}
 	}
-
-	retval = GetTempFileName (p, "ezq", !verify_exists, tmp);
-
-	if (!retval)
-	{
+#ifdef WIN32
+	char uuidstr[39] = "{00000000-0000-0000-0000-000000000000}";
+	UUID uuid;
+	/* Try to create a directory with a random name until we succeed. */
+	for (;;) {
+		if (strlcpy(dirname, parent, dirname_size) >= dirname_size) {
+			return -1;
+		}
+		if (*parent && parent[strlen(parent) - 1] != '\\') {
+			if (strlcat(dirname, "\\", dirname_size) >= dirname_size) {
+				return -1;
+			}
+		}
+		if (strlcat(dirname, "ezq", dirname_size) >= dirname_size) {
+			return -1;
+		}
+		if (UuidCreate(&uuid) != RPC_S_OK) {
+			return -1;
+		}
+		if (!StringFromGUID2(&uuid, uuidstr, 39)) {
+			return -1;
+		}
+		if (strlcat(dirname, uuidstr, dirname_size) >= dirname_size) {
+			return -1;
+		}
+		if (CreateDirectory(dirname, NULL)) {
+			break;
+		}
+		if (GetLastError() != ERROR_ALREADY_EXISTS) {
+			return -1;
+		}
+	}
+#else
+	if (strlcpy(dirname, parent, dirname_size) >= dirname_size) {
 		return -1;
 	}
-
-	strlcpy (filename, tmp, filename_size);
-	#else
-	char *tmp;
-
-	// TODO: I'm no unix person, is this proper? -Nope. Fixme
-	tmp = tempnam(path, "ezq");
-	if (!tmp)
+	if (*parent && parent[strlen(parent) - 1] != '/') {
+		if (strlcat(dirname, "/", dirname_size) >= dirname_size) {
+			return -1;
+		}
+	}
+	if (strlcat(dirname, "ezqXXXXXXXXXXXXXXXXXXXXX", dirname_size) >= dirname_size) {
 		return -1;
-
-	strlcpy (filename, tmp, filename_size);
-	Q_free (tmp);
-	retval = strlen(filename);
-	#endif
-
-	return retval;
+	}
+	if (mkdtemp(dirname) == NULL || !*dirname) {
+		return -1;
+	}
+#endif
+	return strlen(dirname);
 }
 
-qbool COM_FileExists (char *path)
+
+int  // length of the file name or <0 on error
+COM_CreateTempFile(
+   const char *path,    // parent directory of the new file
+   const char *suffix,  // suffix of the new file
+   char *filename,      // buffer for the name of the new file
+   int filename_size    // size of said buffer
+) {
+   char parent[MAX_PATH] = "";
+
+   if (path == NULL) {
+       if (COM_GetTempDir(parent, MAX_PATH) < 0) {
+           return -1;
+       }
+   }
+   else {
+       if (strlcpy(parent, path, MAX_PATH) >= MAX_PATH ) {
+           return -1;
+       }
+   }
+#ifdef WIN32
+   char uuidstr[39] = "{00000000-0000-0000-0000-000000000000}";
+   HANDLE handle = INVALID_HANDLE_VALUE;
+   UUID uuid;
+   /* Try to create a file with a random name until we succeed. */
+   for (;;) {
+       if (strlcpy(filename, parent, filename_size) >= filename_size) {
+           return -1;
+       }
+       if (*parent && parent[strlen(parent) - 1] != '\\') {
+           if (strlcat(filename, "\\", filename_size) >= filename_size) {
+               return -1;
+           }
+       }
+       if (strlcat(filename, "ezq", filename_size) >= filename_size) {
+           return -1;
+       }
+       if (UuidCreate(&uuid) != RPC_S_OK) {
+           return -1;
+       }
+       if (!StringFromGUID2(&uuid, uuidstr, 39)) {
+           return -1;
+       }
+       if (strlcat(filename, uuidstr, filename_size) >= filename_size) {
+           return -1;
+       }
+       if (strlcat(filename, suffix == NULL ? "" : suffix, filename_size) >= filename_size) {
+           return -1;
+       }
+       handle = CreateFile2(filename, GENERIC_READ | GENERIC_WRITE, 0, CREATE_NEW, NULL);
+       if (handle != INVALID_HANDLE_VALUE) {
+           break;
+       }
+       if (GetLastError() != ERROR_FILE_EXISTS) {
+           return -1;
+       }
+   }
+   if (!CloseHandle(handle)) {
+       unlink(filename);
+       return -1;
+   }
+#else
+   int fd = 0;
+   if (strlcpy(filename, parent, filename_size) >= filename_size) {
+       return -1;
+   }
+   if (*parent && parent[strlen(parent) - 1] != '/') {
+       if (strlcat(filename, "/", filename_size) >= filename_size) {
+           return -1;
+       }
+   }
+   if (strlcat(filename, "ezqXXXXXXXX", filename_size) >= filename_size) {
+       return -1;
+   }
+   if (strlcat(filename, suffix == NULL ? "" : suffix, filename_size) >= filename_size) {
+       return -1;
+   }
+   fd = mkstemps(filename, suffix == NULL ? 0 : strlen(suffix));
+   if (fd < 0 || !*filename) {
+       return -1;
+   }
+   if (close(fd) != 0) {
+       unlink(filename);
+       return -1;
+   }
+#endif
+   return strlen(filename);
+}
+
+
+qbool COM_FileExists (const char *path)
 {
 	FILE *fexists = NULL;
 

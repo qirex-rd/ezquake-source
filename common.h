@@ -176,7 +176,7 @@ int COM_GetFloatTokens(const char *s, float *fl_array, int fl_array_size);
 void COM_Init (void);
 
 const char *COM_SkipPath (const char *pathname);
-char *COM_SkipPathWritable (char *pathname);
+char *COM_SkipPathWritable (const char *pathname);
 char *COM_FitPath(char *dest, int destination_size, char *src, int size_to_fit);
 char *COM_FileExtension (const char *in);
 void COM_StripExtension (const char *in, char *out, int out_size);
@@ -189,8 +189,9 @@ void COM_ForceExtension (char *path, char *extension);
 // a bit extended version of COM_ForceExtension(), we suply size of path, so append safe, sure if u provide right path size
 void COM_ForceExtensionEx (char *path, char *extension, size_t path_size);
 int COM_GetTempDir(char *buf, int bufsize);
-int COM_GetUniqueTempFilename (char *path, char *filename, int filename_size, qbool verify_exists);
-qbool COM_FileExists (char *path);
+int COM_CreateTempDir(const char *path, char *dirname, int dirname_size);
+int COM_CreateTempFile(const char *path, const char *suffix, char *filename, int filename_size);
+qbool COM_FileExists (const char *path);
 void COM_StoreOriginalCmdline(int argc, char **argv);
 
 extern char *SYSINFO_GetString(void);
